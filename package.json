@@ -1,0 +1,23 @@
+{
+  "name": "linkedin-insight-backend",
+  "version": "1.0.0",
+  "description": "Auth + data API sitting in front of Supabase for the LinkedIn Profile Insight extension",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.115.0"
+  }
+}
