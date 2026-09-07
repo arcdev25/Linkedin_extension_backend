@@ -5,17 +5,32 @@
 // were a raw SQL prompt, because effectively it is.
 import { SUPABASE_URL, SUPABASE_SERVICE_KEY, UPSTREAM_TIMEOUT_MS } from './config.js';
 
-// The new-style secret keys (sb_secret_…) are NOT JWTs, so Supabase rejects
-// them on the Authorization: Bearer header — they must travel on `apikey`
-// alone. Legacy service_role keys are JWTs and want both. Detect and adapt so
-// either kind works.
 export const isLegacyJwtKey = SUPABASE_SERVICE_KEY.startsWith('eyJ');
 
-export const supabaseAuthHeaders = () => (
-  isLegacyJwtKey
-    ? { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
-    : { apikey: SUPABASE_SERVICE_KEY }
-);
+// Supabase's gateway authenticates on `apikey`, but PostgREST decides which
+// DATABASE ROLE you get from the `Authorization` header. Send only `apikey` and
+// you can authenticate fine yet land on a role without grants — which shows up
+// as HTTP 403 on every table.
+//
+// So: send both by default, which is what supabase-js itself does, for legacy
+// service_role JWTs and new sb_secret_ keys alike.
+//
+// SUPABASE_AUTH_MODE overrides this if your project needs something else:
+//   both   (default) — apikey + Authorization: Bearer
+//   apikey           — apikey only
+//   bearer           — Authorization: Bearer only
+// GET /health/db probes all three and reports which your project accepts.
+export const AUTH_MODE = ['both', 'apikey', 'bearer'].includes(process.env.SUPABASE_AUTH_MODE)
+  ? process.env.SUPABASE_AUTH_MODE
+  : 'both';
+
+export function authHeadersFor(mode, key = SUPABASE_SERVICE_KEY) {
+  if (mode === 'apikey') return { apikey: key };
+  if (mode === 'bearer') return { Authorization: `Bearer ${key}` };
+  return { apikey: key, Authorization: `Bearer ${key}` };
+}
+
+export const supabaseAuthHeaders = () => authHeadersFor(AUTH_MODE);
 
 const baseHeaders = {
   'Content-Type': 'application/json',
