@@ -27,8 +27,30 @@ app.use(cors({
     if (ALLOWED_ORIGINS.length === 0) return cb(null, true); // dev default
     return cb(null, ALLOWED_ORIGINS.includes(origin));
   },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+
+  // The dashboard talks to /rest/v1 through supabase-js, which sends several
+  // headers of its own. Any one missing here fails the preflight and the
+  // browser reports only "Failed to fetch".
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'apikey',
+    'x-client-info',        // supabase-js sends this on every request
+    'x-supabase-api-version',
+    'Prefer',               // count=exact, return=representation
+    'Range',
+    'Range-Unit',
+    'Accept',
+    'Accept-Profile',
+    'Content-Profile',
+  ],
+
+  // Response headers must be explicitly exposed or JavaScript cannot read them.
+  // Content-Range carries the row count for `{ count: 'exact' }` queries —
+  // without it every paginated table in the dashboard shows a null total.
+  exposedHeaders: ['Content-Range', 'Content-Profile', 'Preference-Applied'],
+
   maxAge: 86400,
 }));
 

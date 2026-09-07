@@ -8,7 +8,6 @@
 // PATCH /api/owners/:id/password (admin).
 import bcrypt from 'bcryptjs';
 
-
 const [password, email] = process.argv.slice(2);
 
 if (!password) {
