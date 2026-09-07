@@ -44,8 +44,24 @@ function applyForcedValues(body, forced, ownerId) {
   return Array.isArray(body) ? body.map(stamp) : stamp(body);
 }
 
+// Node drops requests whose headers (request line included) exceed ~16 kB, and
+// serverless platforms cap URLs lower still. A query that long has usually been
+// built by listing hundreds of ids inline — say so, instead of letting the
+// connection die and surface as an unexplained CORS error in the browser.
+const MAX_QUERY_LENGTH = 7000;
+
 router.all('/:table', async (req, res) => {
   const table = req.params.table;
+
+  if (req.originalUrl.length > MAX_QUERY_LENGTH) {
+    console.error('[proxy] query too long:', req.originalUrl.length, 'chars for', table);
+    return res.status(414).json({
+      message: `Query string too long (${req.originalUrl.length} chars). `
+        + 'This usually means a filter is listing hundreds of ids inline — '
+        + 'filter on a joined table instead.',
+      code: 'QUERY_TOO_LONG',
+    });
+  }
   const owner = req.owner;             // set by requireAuth in server.js
   const policy = policyFor(table);
 
@@ -66,7 +82,10 @@ router.all('/:table', async (req, res) => {
   }
 
   // ── Rewrite the query string ────────────────────────────────────────────────
-  const params = new URLSearchParams(req.url.split('?')[1] || '');
+  // Everything after the FIRST '?'. split('?')[1] would silently discard the
+  // remainder if a second '?' ever appeared in the URL.
+  const queryStart = req.url.indexOf('?');
+  const params = new URLSearchParams(queryStart === -1 ? '' : req.url.slice(queryStart + 1));
 
   // Never let a hidden column be selected, embedded or otherwise.
   const select = params.get('select') || '';
@@ -154,6 +173,20 @@ router.all('/:table', async (req, res) => {
       } catch {
         // Not JSON — pass through untouched.
       }
+    }
+
+    // PROXY_DEBUG=true echoes the rewritten URL back to the browser so a failing
+    // query can be diagnosed from the console. Turn it off once you're done — it
+    // reveals your query structure to anyone using the app.
+    if (!upstream.ok && process.env.PROXY_DEBUG === 'true') {
+      try {
+        const parsed = JSON.parse(text);
+        parsed.__debug = {
+          clientSent: req.originalUrl,
+          proxySent: url.replace(SUPABASE_URL, ''),
+        };
+        text = JSON.stringify(parsed);
+      } catch { /* non-JSON body, leave it */ }
     }
 
     res.status(upstream.status).send(text);
