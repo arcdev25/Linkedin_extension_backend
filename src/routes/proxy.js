@@ -6,7 +6,8 @@
 // Everything in here is a security boundary. The service key bypasses RLS
 // entirely, so a mistake in this file is a hole in the database.
 import { Router } from 'express';
-import { SUPABASE_URL, SUPABASE_SERVICE_KEY } from '../config.js';
+import { SUPABASE_URL } from '../config.js';
+import { supabaseAuthHeaders } from '../db.js';
 import { policyFor, scopeAllows } from '../policies.js';
 
 const router = Router();
@@ -108,10 +109,7 @@ router.all('/:table', async (req, res) => {
   }
 
   // ── Forward ─────────────────────────────────────────────────────────────────
-  const headers = {
-    apikey: SUPABASE_SERVICE_KEY,
-    Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-  };
+  const headers = { ...supabaseAuthHeaders() };
   for (const h of FORWARD_REQUEST_HEADERS) {
     const v = req.get(h);
     if (v) headers[h] = v;

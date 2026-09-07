@@ -5,10 +5,21 @@
 // were a raw SQL prompt, because effectively it is.
 import { SUPABASE_URL, SUPABASE_SERVICE_KEY } from './config.js';
 
+// The new-style secret keys (sb_secret_…) are NOT JWTs, so Supabase rejects
+// them on the Authorization: Bearer header — they must travel on `apikey`
+// alone. Legacy service_role keys are JWTs and want both. Detect and adapt so
+// either kind works.
+export const isLegacyJwtKey = SUPABASE_SERVICE_KEY.startsWith('eyJ');
+
+export const supabaseAuthHeaders = () => (
+  isLegacyJwtKey
+    ? { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    : { apikey: SUPABASE_SERVICE_KEY }
+);
+
 const baseHeaders = {
   'Content-Type': 'application/json',
-  apikey: SUPABASE_SERVICE_KEY,
-  Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+  ...supabaseAuthHeaders(),
 };
 
 export class DbError extends Error {
