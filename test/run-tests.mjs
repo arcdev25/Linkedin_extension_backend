@@ -142,6 +142,23 @@ console.log('\n── Disabled mid-session ──');
   check('disabling an account kills live sessions', r.status === 401, `got ${r.status}`);
 }
 
+console.log('\n── Mixed-case emails ──');
+{
+  // The database stores 'Alice@Example.com'. Every one of these must work.
+  for (const typed of ['alice@example.com', 'Alice@Example.com', 'ALICE@EXAMPLE.COM']) {
+    const r = await call('/auth/login', {
+      method: 'POST', body: { email: typed, password: 'correct-horse' },
+    });
+    check(`login with "${typed}"`, r.status === 200 && !!r.data?.token, `got ${r.status}`);
+  }
+  const wrong = await call('/auth/login', {
+    method: 'POST', body: { email: 'Alice@Example.com', password: 'nope' },
+  });
+  check('wrong password still rejected', wrong.status === 401);
+  check('and with a readable message, not a code',
+    /password/i.test(wrong.data?.error || ''), wrong.data?.error);
+}
+
 console.log('\n── Login throttle (database-backed) ──');
 {
   // 10 attempts in the window is the limit; the 11th should be refused.

@@ -89,6 +89,12 @@ export async function db(path, { method = 'GET', body = null, prefer = null } = 
 // has to be encoded or it can inject extra filters.
 export const eq = value => `eq.${encodeURIComponent(value)}`;
 
+// Case-insensitive match. PostgREST maps `*` to the SQL `%` wildcard, so strip
+// any the caller supplied. `_` is still a single-char wildcard here and is
+// legal in an email, so callers MUST verify exact equality on the results.
+export const ilike = value =>
+  `ilike.${encodeURIComponent(String(value).replace(/\*/g, ''))}`;
+
 export function one(rows) {
   return Array.isArray(rows) ? rows[0] || null : rows || null;
 }

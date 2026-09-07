@@ -1,7 +1,7 @@
 // src/routes/auth.js
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { db, eq, one } from '../db.js';
+import { db, eq, ilike, one } from '../db.js';
 import { issueSession, revokeSession, requireAuth, bearerFrom, resolveSession } from '../auth.js';
 
 const router = Router();
@@ -67,9 +67,17 @@ router.post('/login', async (req, res, next) => {
       return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
     }
 
-    const owner = one(await db(
-      `owners?email=${eq(email)}&select=id,name,email,role,password,status&limit=1`
-    ));
+    // Stored emails have mixed case ("Faker@owner.com") and PostgREST's `eq`
+    // is case-sensitive, so an exact match on the lowercased input finds
+    // nothing. Match case-insensitively with ilike, then confirm real equality
+    // in JS — ilike treats `_` as a single-character wildcard, so `a_b@x.com`
+    // would otherwise match a different account.
+    const candidates = await db(
+      `owners?email=${ilike(email)}&select=id,name,email,role,password,status&limit=5`
+    );
+    const owner = (candidates || []).find(
+      o => String(o.email).toLowerCase() === email
+    ) || null;
 
     // Same message and roughly the same work whether the email exists or not,
     // so this endpoint can't be used to enumerate accounts.
@@ -123,7 +131,12 @@ router.post('/register', async (req, res, next) => {
       return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
 
-    const existing = one(await db(`owners?email=${eq(email)}&select=id&limit=1`));
+    // Same case-insensitivity applies here, or two accounts could differ only
+    // by capitalisation and both be able to "log in" as each other's email.
+    const existingRows = await db(`owners?email=${ilike(email)}&select=id,email&limit=5`);
+    const existing = (existingRows || []).find(
+      o => String(o.email).toLowerCase() === email
+    );
     if (existing) {
       return res.status(409).json({ error: 'Email already exists' });
     }

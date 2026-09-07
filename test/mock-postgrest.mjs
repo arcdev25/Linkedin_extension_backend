@@ -20,7 +20,8 @@ export const tables = {
 export function seed() {
   for (const k of Object.keys(tables)) tables[k] = [];
 
-  const alice = { id: randomUUID(), name: 'Alice', email: 'alice@example.com', password: bcrypt.hashSync('correct-horse', 8), status: 'active' };
+  // Deliberately mixed case: the real database stores 'Faker@owner.com'.
+  const alice = { id: randomUUID(), name: 'Alice', email: 'Alice@Example.com', password: bcrypt.hashSync('correct-horse', 8), status: 'active' };
   const mallory = { id: randomUUID(), name: 'Mallory', email: 'mallory@example.com', password: bcrypt.hashSync('hunter2', 8), status: 'active' };
   const disabled = { id: randomUUID(), name: 'Dan', email: 'dan@example.com', password: bcrypt.hashSync('letmein', 8), status: 'disabled' };
   tables.owners.push(alice, mallory, disabled);
@@ -50,7 +51,9 @@ function parseFilters(query) {
     const eqm = raw.match(/^eq\.(.*)$/);
     if (eqm) { filters.push([key, eqm[1], 'eq']); continue; }
     const gtem = raw.match(/^gte\.(.*)$/);
-    if (gtem) filters.push([key, gtem[1], 'gte']);
+    if (gtem) { filters.push([key, gtem[1], 'gte']); continue; }
+    const ilikem = raw.match(/^ilike\.(.*)$/);
+    if (ilikem) filters.push([key, ilikem[1], 'ilike']);
   }
   return { filters, select, limit };
 }
@@ -94,7 +97,9 @@ export function createMock() {
     const match = row => filters.every(([k, v, op]) =>
       op === 'gte'
         ? new Date(row[k]).getTime() >= new Date(v).getTime()
-        : String(row[k]) === String(v));
+        : op === 'ilike'
+          ? String(row[k]).toLowerCase() === String(v).toLowerCase()
+          : String(row[k]) === String(v));
 
     if (req.method === 'GET' || req.method === 'HEAD') {
       const all = tables[table].filter(match);
