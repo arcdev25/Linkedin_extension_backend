@@ -7,32 +7,50 @@ import { issueSession, revokeSession, requireAuth, bearerFrom, resolveSession } 
 const router = Router();
 
 // ─── Login throttle ───────────────────────────────────────────────────────────
-// In-memory, so it resets on redeploy and doesn't span multiple instances. It's
-// here to blunt credential stuffing, not as a hard guarantee — put a real rate
-// limiter (or your host's) in front if this is exposed widely.
-const attempts = new Map();
+// Backed by a database table rather than memory. On a serverless host
+// (Netlify, Vercel) each invocation gets its own memory and instances come and
+// go, so an in-memory counter can be reset simply by spreading attempts across
+// cold starts — a limit that looks like it works but doesn't.
+//
+// Degrades gracefully: if the login_attempts table is missing, throttling is
+// skipped and a warning is logged rather than blocking all logins.
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
+let throttleTableMissing = false;
 
-function throttled(key) {
-  const now = Date.now();
-  const entry = attempts.get(key);
-  if (!entry || now - entry.first > WINDOW_MS) {
-    attempts.set(key, { first: now, count: 1 });
+async function throttled(key) {
+  if (throttleTableMissing) return false;
+
+  const since = new Date(Date.now() - WINDOW_MS).toISOString();
+  try {
+    const rows = await db(
+      `login_attempts?key=${eq(key)}&attempted_at=gte.${encodeURIComponent(since)}&select=id`
+    );
+    return (rows || []).length >= MAX_ATTEMPTS;
+  } catch (e) {
+    console.warn('[auth] login throttle unavailable — run sql/03_login_attempts.sql');
+    throttleTableMissing = true;
     return false;
   }
-  entry.count += 1;
-  return entry.count > MAX_ATTEMPTS;
 }
 
-function clearThrottle(key) {
-  attempts.delete(key);
+async function recordAttempt(key) {
+  if (throttleTableMissing) return;
+  try {
+    await db('login_attempts', { method: 'POST', body: { key } });
+  } catch (e) {
+    // Never let bookkeeping break a legitimate login.
+  }
 }
 
-setInterval(() => {
-  const cutoff = Date.now() - WINDOW_MS;
-  for (const [key, entry] of attempts) if (entry.first < cutoff) attempts.delete(key);
-}, WINDOW_MS).unref?.();
+async function clearThrottle(key) {
+  if (throttleTableMissing) return;
+  try {
+    await db(`login_attempts?key=${eq(key)}`, { method: 'DELETE' });
+  } catch (e) {
+    // Non-fatal.
+  }
+}
 
 // ─── POST /auth/login ─────────────────────────────────────────────────────────
 router.post('/login', async (req, res, next) => {
@@ -45,7 +63,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const throttleKey = `${req.ip}:${email}`;
-    if (throttled(throttleKey)) {
+    if (await throttled(throttleKey)) {
       return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
     }
 
@@ -59,6 +77,7 @@ router.post('/login', async (req, res, next) => {
     const passwordMatches = await bcrypt.compare(password, hash);
 
     if (!owner || !passwordMatches) {
+      await recordAttempt(throttleKey);
       return res.status(401).json({ error: 'Incorrect email or password.' });
     }
     if (owner.status !== 'active') {
@@ -67,7 +86,7 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    clearThrottle(throttleKey);
+    await clearThrottle(throttleKey);
     const { token, expiresAt } = await issueSession(owner.id);
 
     res.json({

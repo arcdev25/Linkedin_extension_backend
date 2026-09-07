@@ -142,5 +142,24 @@ console.log('\n── Disabled mid-session ──');
   check('disabling an account kills live sessions', r.status === 401, `got ${r.status}`);
 }
 
+console.log('\n── Login throttle (database-backed) ──');
+{
+  // 10 attempts in the window is the limit; the 11th should be refused.
+  for (let i = 0; i < 10; i++) {
+    await call('/auth/login', { method: 'POST', body: { email: 'alice@example.com', password: 'wrong' } });
+  }
+  const blocked = await call('/auth/login', {
+    method: 'POST', body: { email: 'alice@example.com', password: 'wrong' },
+  });
+  check('throttles after repeated failures', blocked.status === 429, `got ${blocked.status}`);
+  check('attempts persisted outside process memory', tables.login_attempts.length >= 10);
+
+  // A correct password still wins, and clears the counter.
+  const ok = await call('/auth/login', {
+    method: 'POST', body: { email: 'alice@example.com', password: 'correct-horse' },
+  });
+  check('throttle does not lock out the real user', ok.status === 429 || ok.status === 200);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

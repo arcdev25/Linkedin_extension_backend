@@ -112,8 +112,31 @@ host's dashboard — never commit them.
 
 - **Render / Railway / Fly.io**: point at this directory, build `npm install`,
   start `npm start`.
-- **Vercel**: needs a serverless wrapper; the in-memory login throttle and
-  blocklist cache won't be shared across invocations. Both degrade gracefully.
+- **Netlify**: supported via `netlify.toml` + `netlify/functions/api.js`, which
+  wrap the same Express app in a Lambda. Set the base directory to `backend`.
+  Run `sql/03_login_attempts.sql` first — see below.
+- **Vercel**: same shape as Netlify; add an `api/index.js` that exports the app
+  from `src/app.js` and a rewrite sending `/*` to it.
+
+### Serverless caveats
+
+`src/server.js` (persistent hosts) and `netlify/functions/api.js` (Lambda) both
+import the same app from `src/app.js`, so there's no second copy of the routing
+or policy code to keep in sync.
+
+Two things behave differently without a long-lived process:
+
+- **Login throttling** must be database-backed, since invocations don't share
+  memory and an attacker could reset an in-memory counter by spreading attempts
+  across cold starts. Run `sql/03_login_attempts.sql`. If the table is missing,
+  logins still work — the backend logs a warning and skips throttling rather
+  than locking everyone out.
+- **Cold starts** hit a request-heavy proxy hardest. The dashboard fires several
+  PostgREST queries per page load, and each becomes its own invocation. The rank
+  and dashboard pages are the ones to watch.
+
+`UPSTREAM_TIMEOUT_MS` defaults to 8s so Supabase calls fail before the platform
+kills the function (Netlify cuts off around 10s on the free tier).
 
 Whatever you pick, put it behind HTTPS and note the URL — it goes into the
 extension's `src/config.js` as `API_BASE_URL`.

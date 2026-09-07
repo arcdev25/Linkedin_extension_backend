@@ -40,3 +40,8 @@ export const CONTACT_SCOPE = process.env.CONTACT_SCOPE === 'owner' ? 'owner' : '
 // Google Apps Script endpoint used for the blocklist check. Proxied so the
 // extension never talks to it directly.
 export const BLOCKLIST_SCRIPT_URL = process.env.BLOCKLIST_SCRIPT_URL || '';
+
+// Upstream timeout for Supabase calls. Keep this comfortably below your host's
+// own request limit — Netlify Functions cut off around 10s on the free tier,
+// so a longer timeout here would never get the chance to fire.
+export const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 8000);

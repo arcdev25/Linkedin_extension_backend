@@ -31,6 +31,7 @@ ALTER TABLE highlights ENABLE ROW LEVEL SECURITY;
 ALTER TABLE keywords   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_sessions    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE login_attempts   ENABLE ROW LEVEL SECURITY;
 
 -- Used by the dashboard's reports and leaderboards. Not in any committed schema
 -- file, so confirm it exists before running this:

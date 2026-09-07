@@ -3,7 +3,7 @@
 // bypasses RLS — so the *only* thing standing between a caller and the whole
 // database is the authorization logic in this app. Treat each route as if it
 // were a raw SQL prompt, because effectively it is.
-import { SUPABASE_URL, SUPABASE_SERVICE_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_SERVICE_KEY, UPSTREAM_TIMEOUT_MS } from './config.js';
 
 // The new-style secret keys (sb_secret_…) are NOT JWTs, so Supabase rejects
 // them on the Authorization: Bearer header — they must travel on `apikey`
@@ -39,7 +39,7 @@ export async function db(path, { method = 'GET', body = null, prefer = null } = 
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
   } catch (e) {
     throw new DbError('Database unreachable', 503);

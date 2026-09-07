@@ -12,6 +12,7 @@ export const tables = {
   contacts: [],
   highlights: [],
   keywords: [],
+  login_attempts: [],
   auth_sessions: [],
   daily_reports: [],
 };
@@ -46,8 +47,10 @@ function parseFilters(query) {
     if (key === 'select') { select = raw; continue; }
     if (key === 'limit') { limit = Number(raw); continue; }
     if (key === 'order' || key === 'on_conflict') continue;
-    const m = raw.match(/^eq\.(.*)$/);
-    if (m) filters.push([key, m[1]]);
+    const eqm = raw.match(/^eq\.(.*)$/);
+    if (eqm) { filters.push([key, eqm[1], 'eq']); continue; }
+    const gtem = raw.match(/^gte\.(.*)$/);
+    if (gtem) filters.push([key, gtem[1], 'gte']);
   }
   return { filters, select, limit };
 }
@@ -88,7 +91,10 @@ export function createMock() {
     for await (const chunk of req) body += chunk;
     const payload = body ? JSON.parse(body) : null;
 
-    const match = row => filters.every(([k, v]) => String(row[k]) === String(v));
+    const match = row => filters.every(([k, v, op]) =>
+      op === 'gte'
+        ? new Date(row[k]).getTime() >= new Date(v).getTime()
+        : String(row[k]) === String(v));
 
     if (req.method === 'GET' || req.method === 'HEAD') {
       const all = tables[table].filter(match);
@@ -119,7 +125,12 @@ export function createMock() {
       // PostgREST accepts a single object or an array of them.
       const incoming = Array.isArray(payload) ? payload : [payload];
       const created = incoming.map(p => {
-        const row = { id: randomUUID(), created_at: new Date().toISOString(), ...p };
+        const row = {
+          id: randomUUID(),
+          created_at: new Date().toISOString(),
+          attempted_at: new Date().toISOString(),
+          ...p,
+        };
         tables[table].push(row);
         return row;
       });

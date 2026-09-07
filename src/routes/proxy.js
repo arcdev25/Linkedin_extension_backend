@@ -6,7 +6,7 @@
 // Everything in here is a security boundary. The service key bypasses RLS
 // entirely, so a mistake in this file is a hole in the database.
 import { Router } from 'express';
-import { SUPABASE_URL } from '../config.js';
+import { SUPABASE_URL, UPSTREAM_TIMEOUT_MS } from '../config.js';
 import { supabaseAuthHeaders } from '../db.js';
 import { policyFor, scopeAllows } from '../policies.js';
 
@@ -124,7 +124,7 @@ router.all('/:table', async (req, res) => {
       method: req.method,
       headers,
       body: ['GET', 'HEAD', 'DELETE'].includes(req.method) ? undefined : JSON.stringify(body ?? {}),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
 
     for (const h of FORWARD_RESPONSE_HEADERS) {

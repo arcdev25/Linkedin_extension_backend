@@ -1,0 +1,21 @@
+# Netlify runs this backend as a single Lambda function rather than a
+# long-lived server. Every request is rewritten to that function.
+
+[build]
+  base    = "backend"
+  command = "npm install"
+  # No static output — this project is API-only. The folder just has to exist.
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Send everything to the Express app. Without this, Netlify looks for static
+# files at /auth/login etc. and returns 404 — which is the usual reason a
+# working local server appears dead once deployed.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
