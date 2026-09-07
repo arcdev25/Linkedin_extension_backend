@@ -2,6 +2,7 @@
 // Recruiters, profiles, contacts, highlights and keywords. Everything here is
 // behind requireAuth, mounted in server.js.
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
 import { db, eq, one, DbError } from '../db.js';
 import { CONTACT_SCOPE } from '../config.js';
 import {
@@ -25,6 +26,38 @@ const str = (v, max = 2000) => String(v ?? '').trim().slice(0, max);
 function displayName(r) {
   return r.company ? `${r.name}'s ${r.company}` : r.name;
 }
+
+// ─── Admin: reset another owner's password ───────────────────────────────────
+// The /rest/v1 proxy deliberately refuses writes to owners.password, so resets
+// go through here where the admin check and hashing are explicit.
+router.patch('/owners/:id/password', async (req, res, next) => {
+  try {
+    if (req.owner.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const newPassword = String(req.body?.newPassword || '');
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+
+    const targetId = str(req.params.id, 60);
+    const target = one(await db(`owners?id=${eq(targetId)}&select=id,email&limit=1`));
+    if (!target) return res.status(404).json({ error: 'Owner not found' });
+
+    await db(`owners?id=${eq(targetId)}`, {
+      method: 'PATCH',
+      body: { password: await bcrypt.hash(newPassword, 10) },
+    });
+
+    // Sign the target out everywhere; whoever held the old password is done.
+    await db(`auth_sessions?owner_id=${eq(targetId)}`, { method: 'DELETE' });
+
+    res.json({ ok: true, email: target.email });
+  } catch (e) {
+    next(e);
+  }
+});
 
 // ─── Recruiters ───────────────────────────────────────────────────────────────
 

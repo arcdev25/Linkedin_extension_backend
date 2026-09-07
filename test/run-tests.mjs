@@ -159,6 +159,70 @@ console.log('\n── Mixed-case emails ──');
     /password/i.test(wrong.data?.error || ''), wrong.data?.error);
 }
 
+console.log('\n── Password change ──');
+{
+  const sess = await call('/auth/login', {
+    method: 'POST', body: { email: 'alice@example.com', password: 'correct-horse' },
+  });
+  const token = sess.data.token;
+
+  const wrongCurrent = await call('/auth/change-password', {
+    method: 'POST', token, body: { currentPassword: 'nope', newPassword: 'brand-new-pw' },
+  });
+  check('current password is required', wrongCurrent.status === 401, `got ${wrongCurrent.status}`);
+
+  const tooShort = await call('/auth/change-password', {
+    method: 'POST', token, body: { currentPassword: 'correct-horse', newPassword: 'short' },
+  });
+  check('short new password refused', tooShort.status === 400, `got ${tooShort.status}`);
+
+  const ok = await call('/auth/change-password', {
+    method: 'POST', token, body: { currentPassword: 'correct-horse', newPassword: 'brand-new-pw' },
+  });
+  check('password changed', ok.status === 200, `got ${ok.status}`);
+
+  const oldToken = await call('/api/recruiters', { token });
+  check('existing sessions revoked on change', oldToken.status === 401, `got ${oldToken.status}`);
+
+  const oldPw = await call('/auth/login', {
+    method: 'POST', body: { email: 'alice@example.com', password: 'correct-horse' },
+  });
+  check('old password no longer works', oldPw.status === 401, `got ${oldPw.status}`);
+
+  const newPw = await call('/auth/login', {
+    method: 'POST', body: { email: 'alice@example.com', password: 'brand-new-pw' },
+  });
+  check('new password works', newPw.status === 200, `got ${newPw.status}`);
+}
+
+console.log('\n── Admin password reset ──');
+{
+  const admin = (await call('/auth/login', {
+    method: 'POST', body: { email: 'alice@example.com', password: 'brand-new-pw' },
+  })).data;
+  tables.owners.find(o => o.id === admin.session.id).role = 'admin';
+
+  const mallory = tables.owners.find(o => o.email === 'mallory@example.com');
+  mallory.status = 'active';
+
+  const reset = await call(`/api/owners/${mallory.id}/password`, {
+    method: 'PATCH', token: admin.token, body: { newPassword: 'reset-by-admin' },
+  });
+  check('admin can reset another password', reset.status === 200, `got ${reset.status}`);
+
+  const login = await call('/auth/login', {
+    method: 'POST', body: { email: 'mallory@example.com', password: 'reset-by-admin' },
+  });
+  check('target can log in with the new password', login.status === 200, `got ${login.status}`);
+
+  // A non-admin must not be able to do this.
+  tables.owners.find(o => o.id === admin.session.id).role = 'owner';
+  const denied = await call(`/api/owners/${mallory.id}/password`, {
+    method: 'PATCH', token: admin.token, body: { newPassword: 'hijacked-pw' },
+  });
+  check('non-admin refused', denied.status === 403, `got ${denied.status}`);
+}
+
 console.log('\n── Login throttle (database-backed) ──');
 {
   // 10 attempts in the window is the limit; the 11th should be refused.

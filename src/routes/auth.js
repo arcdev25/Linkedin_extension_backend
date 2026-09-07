@@ -2,7 +2,10 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { db, eq, ilike, one } from '../db.js';
-import { issueSession, revokeSession, requireAuth, bearerFrom, resolveSession } from '../auth.js';
+import {
+  issueSession, revokeSession, revokeAllSessionsForOwner,
+  requireAuth, bearerFrom, resolveSession,
+} from '../auth.js';
 
 const router = Router();
 
@@ -86,7 +89,20 @@ router.post('/login', async (req, res, next) => {
 
     if (!owner || !passwordMatches) {
       await recordAttempt(throttleKey);
-      return res.status(401).json({ error: 'Incorrect email or password.' });
+
+      // Normally both failures return the same message so this endpoint can't
+      // be used to discover which emails exist. Set AUTH_DEBUG=true TEMPORARILY
+      // while commissioning a deploy to see which one actually failed, then
+      // remove it — leaving it on hands attackers an account enumerator.
+      const body = { error: 'Incorrect email or password.' };
+      if (process.env.AUTH_DEBUG === 'true') {
+        body.debug = !owner
+          ? `no account matched "${email}" (checked case-insensitively)`
+          : `account found (${owner.email}); bcrypt comparison failed. `
+            + `stored hash prefix="${String(owner.password).slice(0, 4)}" `
+            + `length=${String(owner.password).length} (expected $2a$/$2b$/$2y$ and 60)`;
+      }
+      return res.status(401).json(body);
     }
     if (owner.status !== 'active') {
       return res.status(403).json({
@@ -176,6 +192,37 @@ router.get('/session', async (req, res, next) => {
   try {
     const resolved = await resolveSession(bearerFrom(req));
     res.json({ session: resolved ? resolved.owner : null });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /auth/change-password ───────────────────────────────────────────────
+// Change your own password. Requires the current one, so a stolen session token
+// alone can't lock the real owner out.
+router.post('/change-password', requireAuth, async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    const row = one(await db(`owners?id=${eq(req.owner.id)}&select=password&limit=1`));
+    if (!row || !(await bcrypt.compare(currentPassword, row.password))) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    await db(`owners?id=${eq(req.owner.id)}`, {
+      method: 'PATCH',
+      body: { password: await bcrypt.hash(newPassword, 10) },
+    });
+
+    // Every existing session is invalidated, including this one — a password
+    // change should log out anyone who had the old credentials.
+    await revokeAllSessionsForOwner(req.owner.id);
+    res.json({ ok: true, message: 'Password changed. Please sign in again.' });
   } catch (e) {
     next(e);
   }
