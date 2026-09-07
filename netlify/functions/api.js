@@ -4,8 +4,13 @@
 // runs here. serverless-http adapts the same Express app to the Lambda event
 // shape, meaning the routes, policies and auth code are shared with the
 // Railway/Render deployment — there is no second copy to keep in sync.
-import serverless from 'serverless-http';
+import serverlessImport from 'serverless-http';
 import { app } from '../../src/app.js';
+
+// Same CJS interop hazard as in app.js — serverless-http may arrive wrapped.
+const serverless = typeof serverlessImport === 'function'
+  ? serverlessImport
+  : serverlessImport.default;
 
 const handler = serverless(app, {
   request(req, event) {

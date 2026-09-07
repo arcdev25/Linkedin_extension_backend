@@ -8,6 +8,12 @@ import dataRoutes from './routes/data.js';
 import blocklistRoutes from './routes/blocklist.js';
 import proxyRoutes from './routes/proxy.js';
 
+// Netlify's function bundler can transpile these ES modules to CommonJS. When
+// it does, a default export arrives wrapped as { default: fn } and Express
+// throws "Router.use() requires a middleware function but got a Object".
+// Unwrapping here keeps one codebase working under both module systems.
+const mw = m => (typeof m === 'function' ? m : m?.default);
+
 const app = express();
 
 app.set('trust proxy', 1); // so req.ip is the real client behind a proxy/CDN
@@ -29,13 +35,13 @@ app.use(express.json({ limit: '256kb' }));
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-app.use('/auth', authRoutes);
-app.use('/api', requireAuth, dataRoutes);
+app.use('/auth', mw(authRoutes));
+app.use('/api', requireAuth, mw(dataRoutes));
 
 // PostgREST-shaped surface for the admin dashboard. Every request is
 // authenticated and rewritten by src/policies.js before it reaches Supabase.
-app.use('/rest/v1', requireAuth, proxyRoutes);
-app.use('/blocklist', requireAuth, blocklistRoutes);
+app.use('/rest/v1', requireAuth, mw(proxyRoutes));
+app.use('/blocklist', requireAuth, mw(blocklistRoutes));
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
