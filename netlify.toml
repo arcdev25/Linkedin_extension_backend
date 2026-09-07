@@ -2,7 +2,8 @@
 # long-lived server. Every request is rewritten to that function.
 
 # No `base` key: when this folder is pushed as its own repo, the repo root IS
-# the backend and there is no subdirectory to descend into.
+# the backend and there is no subdirectory to descend into. If you instead push
+# the whole project, add: base = "backend"
 
 [build]
   command   = "npm install"
@@ -15,12 +16,16 @@
 
 [functions]
   # Bundle with esbuild rather than leaving module-system detection to chance.
+  # Node version comes from [build.environment] above — `node_version` is not a
+  # valid key here; Netlify reads unknown keys under [functions] as per-function
+  # scopes and rejects a plain string.
   node_bundler = "esbuild"
 
 # Send everything to the Express app. Without this, Netlify looks for static
-# files at /auth/login etc. and returns 404.
+# files at /auth/login etc. and returns 404 — which is the usual reason a
+# working local server appears dead once deployed.
 [[redirects]]
-  from   = "/*"
-  to     = "/.netlify/functions/api/:splat"
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
   status = 200
-  force  = true
+  force = true

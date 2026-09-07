@@ -54,10 +54,17 @@ export async function db(path, { method = 'GET', body = null, prefer = null } = 
   }
 
   if (!res.ok) {
-    // Postgres error details can leak schema information, so log them here and
-    // hand the client something generic.
-    console.error('[db] error', res.status, data);
-    throw new DbError('Database request failed', res.status >= 500 ? 502 : 400);
+    // Full Postgres error details can leak schema information, so the body goes
+    // to the logs. The upstream status code is safe to surface and is the
+    // single most useful clue when debugging a deploy:
+    //   401/403 — SUPABASE_SERVICE_KEY wrong, or sent on the wrong header
+    //   404     — table missing (usually sql/01 not run yet) or bad SUPABASE_URL
+    //   400     — column missing; the schema doesn't match what the code expects
+    console.error('[db] error', res.status, path, JSON.stringify(data)?.slice(0, 400));
+    throw new DbError(
+      `Database request failed (upstream ${res.status})`,
+      res.status >= 500 ? 502 : 400
+    );
   }
 
   return data;

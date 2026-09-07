@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
 import blocklistRoutes from './routes/blocklist.js';
 import proxyRoutes from './routes/proxy.js';
+import healthRoutes from './routes/health.js';
 
 // Netlify's function bundler can transpile these ES modules to CommonJS. When
 // it does, a default export arrives wrapped as { default: fn } and Express
@@ -34,6 +35,7 @@ app.use(cors({
 app.use(express.json({ limit: '256kb' }));
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+app.use('/health', mw(healthRoutes));
 
 app.use('/auth', mw(authRoutes));
 app.use('/api', requireAuth, mw(dataRoutes));

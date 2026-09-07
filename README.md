@@ -141,6 +141,25 @@ kills the function (Netlify cuts off around 10s on the free tier).
 Whatever you pick, put it behind HTTPS and note the URL — it goes into the
 extension's `src/config.js` as `API_BASE_URL`.
 
+## Troubleshooting a deploy
+
+`GET /health` → `{"ok":true}` means the function is running.
+`GET /health/db` checks whether it can actually reach Supabase and whether every
+required table exists. It returns booleans only — no data, no credentials — and
+can be deleted once your deploy is stable.
+
+Login failing with **"Database request failed (upstream N)"**:
+
+| N | Meaning | Fix |
+|---|---|---|
+| 404 | Table missing, or wrong `SUPABASE_URL` | Run `sql/01_sessions_and_status.sql` — this is the usual one |
+| 401/403 | Supabase rejected the key | Re-copy `SUPABASE_SERVICE_KEY` in full |
+| 400 | Column missing | Your schema differs from what the code expects |
+| 0 / unreachable | Can't reach Supabase | Check `SUPABASE_URL` |
+
+The function logs (Netlify → Logs → Functions) carry the full upstream error
+body under `[db] error`, including the table and Postgres message.
+
 ## ⚠️ Cutover order
 
 Enabling RLS breaks every old install at once, including login. There is no
